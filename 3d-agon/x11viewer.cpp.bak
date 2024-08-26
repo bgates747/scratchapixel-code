@@ -1,0 +1,172 @@
+#include <X11/Xlib.h>
+#include <X11/Xutil.h>
+#include <unistd.h>
+#include <iostream>
+#include <vector>
+#include <cmath>
+
+#include "geometry.h" 
+#include "objimporter.h"
+#include "Camera.h"
+
+#include "geometry.h" 
+#include "objimporter.h"
+#include "Camera.h"  // Include the updated Camera class
+
+class X11Viewer {
+public:
+    X11Viewer(int width, int height) : width(width), height(height) {
+        display = XOpenDisplay(nullptr);
+        if (display == nullptr) {
+            std::cerr << "Cannot open display\n";
+            exit(1);
+        }
+
+        screen = DefaultScreen(display);
+        window = XCreateSimpleWindow(display, RootWindow(display, screen), 10, 10, width, height, 1,
+                                     BlackPixel(display, screen), WhitePixel(display, screen));
+
+        XSetStandardProperties(display, window, "X11 Viewer", "X11 Viewer", None, nullptr, 0, nullptr);
+        XSelectInput(display, window, ExposureMask | KeyPressMask);
+        gc = XCreateGC(display, window, 0, 0);
+
+        XMapWindow(display, window);
+    }
+
+    ~X11Viewer() {
+        XFreeGC(display, gc);
+        XDestroyWindow(display, window);
+        XCloseDisplay(display);
+    }
+
+    void mainLoop(ObjData& objData, const Camera& camera) {
+        XEvent event;
+        while (true) {
+            XNextEvent(display, &event);
+
+            if (event.type == Expose) {
+                drawWireframe(objData, camera);
+            }
+
+            if (event.type == KeyPress) {
+                char key = XLookupKeysym(&event.xkey, 0);
+                if (key == 'q') {
+                    break;
+                }
+            }
+        }
+    }
+
+    void drawWireframe(const ObjData& objData, const Camera& camera) {
+        // Clear the window
+        XClearWindow(display, window);
+
+        Matrix44f worldToCamera = camera.getWorldToCameraMatrix();
+        float nearClippingPlane = camera.getNearClip();
+        float fov = camera.getFov();
+        float aspectRatio = camera.getAspectRatio();
+
+        // Correct calculation of the frustum boundaries
+        float top = tanf(fov * 0.5f * M_PI / 180.0f) * nearClippingPlane;
+        float right = top * aspectRatio;
+        float bottom = -top;
+        float left = -right;
+
+        uint32_t numTris = objData.face_indices.size() / 3;
+
+        for (uint32_t i = 0; i < numTris; ++i) {
+            Vec2i v0Raster, v1Raster, v2Raster;
+
+            const Vec3f &v0World = objData.vertices[objData.face_indices[i * 3]];
+            const Vec3f &v1World = objData.vertices[objData.face_indices[i * 3 + 1]];
+            const Vec3f &v2World = objData.vertices[objData.face_indices[i * 3 + 2]];
+
+            bool visible = true;
+            visible &= computePixelCoordinates(v0World, worldToCamera, bottom, left, top, right, nearClippingPlane, width, height, v0Raster);
+            visible &= computePixelCoordinates(v1World, worldToCamera, bottom, left, top, right, nearClippingPlane, width, height, v1Raster);
+            visible &= computePixelCoordinates(v2World, worldToCamera, bottom, left, top, right, nearClippingPlane, width, height, v2Raster);
+
+            int val = visible ? 0 : 255; // Black if visible, red if any vertex is out of bounds
+
+            XSetForeground(display, gc, visible ? BlackPixel(display, screen) : 0xFF0000);
+
+            XDrawLine(display, window, gc, v0Raster.x, v0Raster.y, v1Raster.x, v1Raster.y);
+            XDrawLine(display, window, gc, v1Raster.x, v1Raster.y, v2Raster.x, v2Raster.y);
+            XDrawLine(display, window, gc, v2Raster.x, v2Raster.y, v0Raster.x, v0Raster.y);
+        }
+
+        // Flush the output to make sure everything is drawn
+        XFlush(display);
+    }
+
+private:
+    Display *display;
+    int screen;
+    Window window;
+    GC gc; // Graphics context
+    int width, height;
+
+    // Function to compute 2D pixel coordinates from 3D world coordinates
+    bool computePixelCoordinates(
+        const Vec3f &pWorld,
+        const Matrix44f &worldToCamera,
+        const float &b,
+        const float &l,
+        const float &t,
+        const float &r,
+        const float &near,
+        const uint32_t &imageWidth,
+        const uint32_t &imageHeight,
+        Vec2i &pRaster)
+    {
+        Vec3f pCamera;
+        worldToCamera.multVecMatrix(pWorld, pCamera);
+
+        // Check if the point is in front of the camera (negative z in camera space)
+        if (pCamera.z >= 0) {
+            return false; // Not visible
+        }
+
+        Vec2f pScreen;
+        pScreen.x = pCamera.x / -pCamera.z * near;
+        pScreen.y = pCamera.y / -pCamera.z * near;
+        
+        Vec2f pNDC;
+        pNDC.x = (pScreen.x + r) / (2 * r);
+        pNDC.y = (pScreen.y + t) / (2 * t);
+        pRaster.x = (int)(pNDC.x * imageWidth);
+        pRaster.y = (int)((1 - pNDC.y) * imageHeight);
+
+        return pScreen.x >= l && pScreen.x <= r && pScreen.y >= b && pScreen.y <= t;
+    }
+};
+
+int main() {
+    // Set the window dimensions
+    int windowWidth = 1600;
+    int windowHeight = 900;
+
+    // Set the OBJ file path
+    std::string objFilePath = "cube.obj";
+
+    // Set the initial camera position and parameters
+    Vec3f cameraPosition(0, 0, 2.5);
+    float cameraFOV = 90.0f;
+    float nearClip = 1.0f;
+    float farClip = 1000.0f;
+    float aspectRatio = static_cast<float>(windowWidth) / windowHeight;
+
+    // Create the X11 viewer with specified dimensions
+    X11Viewer viewer(windowWidth, windowHeight);
+
+    // Load the OBJ data from the specified file path
+    ObjData objData = ParseObj(objFilePath);
+
+    // Create a camera object with the specified position, FOV, and aspect ratio
+    Camera camera(cameraPosition, cameraFOV, nearClip, farClip, aspectRatio);
+
+    // Enter the main loop and render the wireframe using the loaded OBJ data and camera
+    viewer.mainLoop(objData, camera);
+
+    return 0;
+}
