@@ -226,13 +226,13 @@ static void shade(const struct shader* shader, struct texcoord2f st, unsigned ch
         const struct image* const image = shader->image_ptr;
         
         // Wrap texture coordinates to [0, 1] range
-        float s = st.s - std::floor(st.s);
-        float t = st.t - std::floor(st.t);
+		float s = st.s - floor(st.s);
+		float t = ceil(st.t) - st.t;
 
         // Convert normalized coordinates to texel coordinates
         struct point2i texel;
-        texel.x = static_cast<int>(s * (image->width - 1));
-        texel.y = static_cast<int>((t) * (image->height - 1));
+		texel.x = (int)fminf(s * image->width, image->width - 1);
+		texel.y = (int)fminf(t * image->height, image->height - 1);
 
         // Get the color from the texture at the texel position
         unsigned char texel_color = image->data[texel.y * image->width + texel.x]; // rgba2222 format
