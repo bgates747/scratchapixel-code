@@ -102,7 +102,7 @@ int main(int argc, char **argv)
 
     // Set global variables with the parsed data
     verts = std::move(objData.vertices);
-    tris = std::move(objData.face_indices);
+    tris = std::move(objData.vertex_indices);
     normals = std::move(objData.normals);
     normal_indices = std::move(objData.normal_indices);
     uvs = std::move(objData.uvs);

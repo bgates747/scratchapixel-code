@@ -67,12 +67,12 @@ typedef Vec2<float> Vec2f;
 typedef Vec2<int> Vec2i;
 
 //[comment]
-// Implementation of a generic vector class - it will be used to deal with 3D points, vectors and normals.
+// Implementation of a generic vector class - it will be used to deal with 3D vertices, vectors and normals.
 // The class is implemented as a template. While it may complicate the code a bit, it gives us
 // the flexibility later, to specialize the type of the coordinates into anything we want.
 // For example: Vec3f if we want the coordinates to be floats or Vec3i if we want the coordinates to be integers.
 //
-// Vec3 is a standard/common way of naming vectors, points, etc. The OpenEXR and Autodesk libraries
+// Vec3 is a standard/common way of naming vectors, vertices, etc. The OpenEXR and Autodesk libraries
 // use this convention for instance.
 //[/comment]
 template<typename T>
@@ -326,10 +326,10 @@ public:
 
     //[comment]
     // This method needs to be used for point-matrix multiplication. Keep in mind
-    // we don't make the distinction between points and vectors at least from
+    // we don't make the distinction between vertices and vectors at least from
     // a programming point of view, as both (as well as normals) are declared as Vec3.
-    // However, mathematically they need to be treated differently. Points can be translated
-    // when translation for vectors is meaningless. Furthermore, points are implicitly
+    // However, mathematically they need to be treated differently. Vertices can be translated
+    // when translation for vectors is meaningless. Furthermore, vertices are implicitly
     // be considered as having homogeneous coordinates. Thus the w coordinates needs
     // to be computed and to convert the coordinates from homogeneous back to Cartesian
     // coordinates, we need to divided x, y z by w.
@@ -504,6 +504,15 @@ public:
 };
 
 typedef Matrix44<float> Matrix44f;
+
+Matrix44f matrix_identity() {
+    return Matrix44f(
+        1, 0, 0, 0,
+        0, 1, 0, 0,
+        0, 0, 1, 0,
+        0, 0, 0, 1
+    );
+}
 
 //[comment]
 // Testing our code. To test the matrix inversion code, we used Maya to output

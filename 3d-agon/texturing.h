@@ -1,29 +1,18 @@
-// Copyright (C) 2024 www.scratchapixel.com
-// Distributed under the terms of the CC BY-NC-ND 4.0 License.
-// https://creativecommons.org/licenses/by-nc-nd/4.0/
-// clang -std=c11 -o texturing.exe  texturing.c -O3
-
 #pragma once
-
-#define _CRT_SECURE_NO_WARNINGS
 
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <assert.h>
-#include <math.h> // For fminf and fmaxf
-#include <algorithm> // For std::max and std::min
 
+#include "_types.h"
 #include "objimporter.h"
 #include "Camera.h"
+#include "mesh.h"
 
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
-
-// Define the necessary structs
-struct point2i { int x, y; };
-struct point3f { float x, y, z; };
-struct texcoord2f { float s, t; };
+#define Z_THRESHOLD 0.000001f
 
 struct image {
     int width;
@@ -31,19 +20,8 @@ struct image {
     unsigned char* data; // rgba2222 format
 };
 
-struct shader {
+struct texture {
     struct image* image_ptr;
-};
-
-struct mesh {
-    struct point3f* points;
-    int* face_vertex_indices;
-    struct {
-        struct texcoord2f* coords;
-        int* indices;
-    } st;
-    int num_triangles;
-    struct shader* shader;
 };
 
 struct extent {
@@ -58,10 +36,6 @@ struct screen_coordinates {
 struct context {
     struct extent extent;
     float focal_length;
-    struct aperture {
-        float width;
-        float height;
-    } aperture;
     float znear, zfar;
     struct screen_coordinates screen_coordinates;
     float* depth_buffer;
@@ -110,98 +84,99 @@ void set_texture(struct image* const image, const char* filename, int width, int
     fclose(file);
 }
 
-static void create_mesh(struct context* const context, struct mesh* const mesh, const ObjData& objData, const char* textureFilename, int textureWidth, int textureHeight) {
+struct texture* create_texture(const char* textureFilename, int textureWidth, int textureHeight) {
+    // Allocate memory for the texture
+    struct texture* new_texture = (struct texture*)malloc(sizeof(struct texture));
+    if (!new_texture) {
+        fprintf(stderr, "Error: Unable to allocate memory for texture\n");
+        return NULL;
+    }
+
+    // Allocate memory for the image in the texture
+    new_texture->image_ptr = (struct image*)malloc(sizeof(struct image));
+    if (!new_texture->image_ptr) {
+        fprintf(stderr, "Error: Unable to allocate memory for texture image\n");
+        free(new_texture);
+        return NULL;
+    }
+
+    // Load the texture into the image
+    new_texture->image_ptr->data = NULL;
+    set_texture(new_texture->image_ptr, textureFilename, textureWidth, textureHeight);
+
+    return new_texture;
+}
+
+static void create_mesh(struct context* const context, struct Mesh* const mesh, const ObjData& objData, struct texture* texture) {
     // Determine the number of vertices and triangles
     size_t num_vertices = objData.vertices.size();
-    size_t num_faces = objData.face_indices.size();
+    size_t num_faces = objData.vertex_indices.size();
     mesh->num_triangles = num_faces / 3;
 
-    // Allocate memory for points and transform them in place
-    mesh->points = (struct point3f*)malloc(num_vertices * sizeof(struct point3f));
-    if (!mesh->points) {
-        fprintf(stderr, "Error: Unable to allocate memory for mesh points\n");
+    // Allocate memory for vertices and transform them in place
+    mesh->vertices = (struct point3f*)malloc(num_vertices * sizeof(struct point3f));
+    if (!mesh->vertices) {
+        fprintf(stderr, "Error: Unable to allocate memory for mesh vertices\n");
         return;
     }
 
     for (size_t i = 0; i < num_vertices; ++i) {
         struct point3f temp_point = { objData.vertices[i].x, objData.vertices[i].y, objData.vertices[i].z };
-        point_mat_mult(&temp_point, context->world_to_cam, &mesh->points[i]);
+        point_mat_mult(&temp_point, context->world_to_cam, &mesh->vertices[i]);
     }
 
-    // Allocate memory for face vertex indices and copy data
-    mesh->face_vertex_indices = (int*)malloc(num_faces * sizeof(int));
-    if (!mesh->face_vertex_indices) {
-        fprintf(stderr, "Error: Unable to allocate memory for face vertex indices\n");
-        free(mesh->points);
+    // Allocate memory for face vertex uv_indices and copy data
+    mesh->vertex_indices = (int*)malloc(num_faces * sizeof(int));
+    if (!mesh->vertex_indices) {
+        fprintf(stderr, "Error: Unable to allocate memory for face vertex uv_indices\n");
+        free(mesh->vertices);
         return;
     }
-    memcpy(mesh->face_vertex_indices, objData.face_indices.data(), num_faces * sizeof(int));
+    memcpy(mesh->vertex_indices, objData.vertex_indices.data(), num_faces * sizeof(int));
 
-    // Allocate and copy texture coordinates and indices, if available
+    // Allocate and copy texture coordinates and uv_indices, if available
     if (!objData.uvs.empty()) {
         size_t num_uvs = objData.uvs.size();
-        mesh->st.coords = (struct texcoord2f*)malloc(num_uvs * sizeof(struct texcoord2f));
-        if (!mesh->st.coords) {
+        mesh->uvs = (struct uv2f*)malloc(num_uvs * sizeof(struct uv2f));
+        if (!mesh->uvs) {
             fprintf(stderr, "Error: Unable to allocate memory for texture coordinates\n");
-            free(mesh->points);
-            free(mesh->face_vertex_indices);
+            free(mesh->vertices);
+            free(mesh->vertex_indices);
             return;
         }
 
         for (size_t i = 0; i < num_uvs; ++i) {
-            mesh->st.coords[i].s = objData.uvs[i].x;
-            mesh->st.coords[i].t = objData.uvs[i].y;
+            mesh->uvs[i].u = objData.uvs[i].x;
+            mesh->uvs[i].v = objData.uvs[i].y;
         }
 
         size_t num_uv_indices = objData.uv_indices.size();
-        mesh->st.indices = (int*)malloc(num_uv_indices * sizeof(int));
-        if (!mesh->st.indices) {
-            fprintf(stderr, "Error: Unable to allocate memory for texture indices\n");
-            free(mesh->points);
-            free(mesh->face_vertex_indices);
-            free(mesh->st.coords);
+        mesh->uv_indices = (int*)malloc(num_uv_indices * sizeof(int));
+        if (!mesh->uv_indices) {
+            fprintf(stderr, "Error: Unable to allocate memory for texture uv_indices\n");
+            free(mesh->vertices);
+            free(mesh->vertex_indices);
+            free(mesh->uvs);
             return;
         }
-        memcpy(mesh->st.indices, objData.uv_indices.data(), num_uv_indices * sizeof(int));
+        memcpy(mesh->uv_indices, objData.uv_indices.data(), num_uv_indices * sizeof(int));
     } else {
-        mesh->st.coords = nullptr;
-        mesh->st.indices = nullptr;
+        mesh->uvs = nullptr;
+        mesh->uv_indices = nullptr;
     }
 
-    // Initialize shader and load the texture
-    mesh->shader = (struct shader*)malloc(sizeof(struct shader));
-    if (!mesh->shader) {
-        fprintf(stderr, "Error: Unable to allocate memory for shader\n");
-        free(mesh->points);
-        free(mesh->face_vertex_indices);
-        free(mesh->st.coords);
-        free(mesh->st.indices);
-        return;
-    }
-
-    mesh->shader->image_ptr = (struct image*)malloc(sizeof(struct image));
-    if (!mesh->shader->image_ptr) {
-        fprintf(stderr, "Error: Unable to allocate memory for shader image\n");
-        free(mesh->shader);
-        free(mesh->points);
-        free(mesh->face_vertex_indices);
-        free(mesh->st.coords);
-        free(mesh->st.indices);
-        return;
-    }
-
-    mesh->shader->image_ptr->data = nullptr;
-    set_texture(mesh->shader->image_ptr, textureFilename, textureWidth, textureHeight);
+    // Assign the pre-created texture to the mesh
+    mesh->texture = texture;
 }
 
-static void destroy_mesh(struct mesh* mesh) {
-	free(mesh->points);
-	free(mesh->face_vertex_indices);
-	free(mesh->st.coords);
-	free(mesh->st.indices);
-	free(mesh->shader->image_ptr->data);
-	free(mesh->shader->image_ptr);
-	free(mesh->shader);
+static void destroy_mesh(struct Mesh* mesh) {
+	free(mesh->vertices);
+	free(mesh->vertex_indices);
+	free(mesh->uvs);
+	free(mesh->uv_indices);
+	free(mesh->texture->image_ptr->data);
+	free(mesh->texture->image_ptr);
+	free(mesh->texture);
 }
 
 static void context_init(struct context* context, const Camera& camera) {
@@ -255,18 +230,21 @@ static void prepare_buffers(struct context* context) {
 }
 
 static inline void persp_divide(struct point3f* p, const float znear) {
+    if (p->z > -Z_THRESHOLD) {
+        p->z = -Z_THRESHOLD;  // Prevent division by zero or extremely small values
+    }
     float inv_z = 1.0f / -p->z;  // Calculate the inverse of z once
     p->x = p->x * inv_z * znear;
     p->y = p->y * inv_z * znear;
     p->z = -p->z;
 }
 
-static inline void to_raster(const struct screen_coordinates coords, const struct extent extent, struct point3f* const p) {
-    float inv_width = 1.0f / (coords.r - coords.l);
-    float inv_height = 1.0f / (coords.t - coords.b);
+static inline void to_raster(const struct screen_coordinates sccoords, const struct extent extent, struct point3f* const p) {
+    float inv_width = 1.0f / (sccoords.r - sccoords.l);
+    float inv_height = 1.0f / (sccoords.t - sccoords.b);
 
-    p->x = 2 * p->x * inv_width - (coords.r + coords.l) * inv_width;
-    p->y = 2 * p->y * inv_height - (coords.t + coords.b) * inv_height;
+    p->x = 2 * p->x * inv_width - (sccoords.r + sccoords.l) * inv_width;
+    p->y = 2 * p->y * inv_height - (sccoords.t + sccoords.b) * inv_height;
 
     p->x = (p->x + 1) * 0.5f * extent.width;
     p->y = (1 - p->y) * 0.5f * extent.height;
@@ -285,16 +263,16 @@ static inline float edge(const struct point3f* const a, const struct point3f* co
     return (test->x - a->x) * (b->y - a->y) - (test->y - a->y) * (b->x - a->x);
 }
 
-static void shade(const struct shader* shader, struct texcoord2f st, unsigned char* ci) {
-    if (shader->image_ptr != NULL) {
-        const struct image* const image = shader->image_ptr;
-        float s = st.s;
-        float t = st.t;
+static void shade(const struct texture* texture, struct uv2f st, unsigned char* ci) {
+    if (texture->image_ptr != NULL) {
+        const struct image* const image = texture->image_ptr;
+        float u = st.u;
+        float v = st.v;
 
         // Convert normalized coordinates to texel coordinates
         struct point2i texel;
-		texel.x = (int)fminf(s * image->width, image->width - 1);
-		texel.y = (int)fminf(t * image->height, image->height - 1);
+		texel.x = (int)fminf(u * image->width, image->width - 1);
+		texel.y = (int)fminf(v * image->height, image->height - 1);
 
         // Get the color from the texture at the texel position
         unsigned char texel_color = image->data[texel.y * image->width + texel.x]; // rgba2222 format
@@ -306,8 +284,8 @@ static void shade(const struct shader* shader, struct texcoord2f st, unsigned ch
 
 static inline void rasterize(int x0, int y0, int x1, int y1, 
                              const struct point3f* const p0, const struct point3f* const p1, const struct point3f* const p2, 
-                             const struct texcoord2f* const st0, const struct texcoord2f* const st1, const struct texcoord2f* const st2,
-                             const struct mesh* const mesh,
+                             const struct uv2f* const st0, const struct uv2f* const st1, const struct uv2f* const st2,
+                             const struct Mesh* const mesh,
                              struct context* context) {
     float inv_area = 1.0f / edge(p0, p1, p2);  // Precompute the inverse of the area
     struct point3f pixel, sample;
@@ -332,31 +310,31 @@ static inline void rasterize(int x0, int y0, int x1, int y1,
                     context->depth_buffer[index] = z;
 
                     // Interpolate the texture coordinates
-                    struct texcoord2f st;
-                    st.s = (st0->s * w0 + st1->s * w1 + st2->s * w2) * z;
-                    st.t = (st0->t * w0 + st1->t * w1 + st2->t * w2) * z;
+                    struct uv2f st;
+                    st.u = (st0->u * w0 + st1->u * w1 + st2->u * w2) * z;
+                    st.v = (st0->v * w0 + st1->v * w1 + st2->v * w2) * z;
 
                     // Shade the pixel and update the color buffer
-                    shade(mesh->shader, st, &context->color_buffer[index]);
+                    shade(mesh->texture, st, &context->color_buffer[index]);
                 }
             }
         }
     }
 }
 
-void render(struct context* context, int num_meshes, const struct mesh** const meshes) {
+void render(struct context* context, int num_meshes, const struct Mesh** const meshes) {
     float bbox[4];
     int x0, x1, y0, y1;
 
     for (int i = 0; i < num_meshes; ++i) {
-        const struct mesh* const mesh = meshes[i];
-        const int* vi = mesh->face_vertex_indices;
-        const int* sti = mesh->st.indices;
+        const struct Mesh* const mesh = meshes[i];
+        const int* vi = mesh->vertex_indices;
+        const int* sti = mesh->uv_indices;
 
         for (int j = 0; j < mesh->num_triangles; ++j, vi += 3, sti += 3) {
-            struct point3f p0 = mesh->points[vi[0]];
-            struct point3f p1 = mesh->points[vi[1]];
-            struct point3f p2 = mesh->points[vi[2]];
+            struct point3f p0 = mesh->vertices[vi[0]];
+            struct point3f p1 = mesh->vertices[vi[1]];
+            struct point3f p2 = mesh->vertices[vi[2]];
 
             persp_divide(&p0, context->znear);
             persp_divide(&p1, context->znear);
@@ -375,16 +353,16 @@ void render(struct context* context, int num_meshes, const struct mesh** const m
             x1 = MIN(context->extent.width - 1, (int)bbox[2]);
             y1 = MIN(context->extent.height - 1, (int)bbox[3]);
 
-            struct texcoord2f st0 = mesh->st.coords[sti[0]];
-            struct texcoord2f st1 = mesh->st.coords[sti[1]];
-            struct texcoord2f st2 = mesh->st.coords[sti[2]];
+            struct uv2f st0 = mesh->uvs[sti[0]];
+            struct uv2f st1 = mesh->uvs[sti[1]];
+            struct uv2f st2 = mesh->uvs[sti[2]];
 
-            st0.s /= p0.z;
-            st0.t /= p0.z;
-            st1.s /= p1.z;
-            st1.t /= p1.z;
-            st2.s /= p2.z;
-            st2.t /= p2.z;
+            st0.u /= p0.z;
+            st0.v /= p0.z;
+            st1.u /= p1.z;
+            st1.v /= p1.z;
+            st2.u /= p2.z;
+            st2.v /= p2.z;
 
             rasterize(x0, y0, x1, y1, &p0, &p1, &p2, &st0, &st1, &st2, mesh, context);
         }

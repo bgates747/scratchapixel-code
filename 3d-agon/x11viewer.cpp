@@ -12,6 +12,7 @@
 #include "objimporter.h"
 #include "Camera.h"
 #include "texturing.h"
+#include "object.h"
 
 class X11Viewer {
 public:
@@ -46,23 +47,23 @@ public:
         XCloseDisplay(display);
     }
 
-    void mainLoop(struct context* context, int num_meshes, struct mesh** meshes) {
+    void mainLoop(struct context* context, int num_meshes, struct Mesh** meshes) {
         while (true) {
-            auto start = std::chrono::high_resolution_clock::now();
+            // auto start = std::chrono::high_resolution_clock::now();
 
             // Render the scene
-            render(context, num_meshes, (const struct mesh** const)meshes);
+            render(context, num_meshes, (const struct Mesh** const)meshes);
 
             // Draw the buffer to the X11 window
             drawBufferToWindow(context);
 
-            auto end = std::chrono::high_resolution_clock::now();
-            std::chrono::duration<double> elapsed = end - start;
-            double render_time_ms = elapsed.count() * 1000.0;
-            double fps = 1000.0 / render_time_ms;
+            // auto end = std::chrono::high_resolution_clock::now();
+            // std::chrono::duration<double> elapsed = end - start;
+            // double render_time_ms = elapsed.count() * 1000.0;
+            // double fps = 1000.0 / render_time_ms;
 
-            // Output the timing information
-            std::cout << "Render Time: " << render_time_ms << " ms, FPS: " << fps << std::endl;
+            // // Output the timing information
+            // std::cout << "Render Time: " << render_time_ms << " ms, FPS: " << fps << std::endl;
 
             // Handle events in a non-blocking manner
             while (XPending(display) > 0) {
@@ -136,16 +137,16 @@ int main() {
     int windowHeight = 320;
 
     // Set the OBJ file path
-    // std::string objFilePath = "objects/jet.obj";
+    std::string objFilePath = "objects/jet.obj";
     // std::string objFilePath = "objects/cube.obj";
-    std::string objFilePath = "objects/wolf_map.obj";
+    // std::string objFilePath = "objects/wolf_map.obj";
 
     // Create the X11 viewer with the specified dimensions
     X11Viewer viewer(windowWidth, windowHeight);
 
     // Initialize the camera
-    Vec3f cameraPosition(0, 0, 0.5);
-    float cameraFOV = 90.0f;
+    Vec3f cameraPosition(0, 0, 10);
+    float cameraFOV = 45.0f;
     float nearClip = 1.0f;
     float farClip = 1000.0f;
     float aspectRatio = static_cast<float>(windowWidth) / windowHeight;
@@ -160,14 +161,21 @@ int main() {
 
     // Set up the mesh data
     int num_meshes = 1;
-    struct mesh** meshes = (struct mesh**)malloc(sizeof(struct mesh*) * num_meshes);
+    struct Mesh** meshes = (struct Mesh**)malloc(sizeof(struct Mesh*) * num_meshes);
     for (int i = 0; i < num_meshes; ++i) {
-        meshes[i] = (struct mesh*)malloc(sizeof(struct mesh));
+        meshes[i] = (struct Mesh*)malloc(sizeof(struct Mesh));
     }
     ObjData meshData = ParseObj(objFilePath);
-    // create_mesh(&context, meshes[0], meshData, "objects/jet.rgba2", 512, 512);
-    // create_mesh(&context, meshes[0], meshData, "objects/blenderaxes.rgba2", 34, 34);
-    create_mesh(&context, meshes[0], meshData, "objects/wolf_tex.rgba2", 160, 160);
+    struct texture* my_texture = create_texture("objects/jet.rgba2", 512, 512);
+    // struct texture* my_texture = create_texture("objects/blenderaxes.rgba2", 34, 34);
+    // struct texture* my_texture = create_texture("objects/wolf_tex.rgba2", 160, 160);
+
+    create_mesh(&context, meshes[0], meshData, my_texture);
+
+    // Set up some objects
+    int num_objects = 1;
+    struct Object* objects = (struct Object*)malloc(sizeof(struct Object) * num_objects);
+    object_init(&objects[0], meshes[0], {0, 0, 0}, {0, 0, 0}, {1, 1, 1});
 
     // Enter the main loop, passing the context and meshes for rendering
     viewer.mainLoop(&context, num_meshes, meshes);

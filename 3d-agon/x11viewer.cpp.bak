@@ -72,14 +72,14 @@ public:
         float bottom = -top;
         float left = -right;
 
-        uint32_t numTris = objData.face_indices.size() / 3;
+        uint32_t numTris = objData.vertex_indices.size() / 3;
 
         for (uint32_t i = 0; i < numTris; ++i) {
             Vec2i v0Raster, v1Raster, v2Raster;
 
-            const Vec3f &v0World = objData.vertices[objData.face_indices[i * 3]];
-            const Vec3f &v1World = objData.vertices[objData.face_indices[i * 3 + 1]];
-            const Vec3f &v2World = objData.vertices[objData.face_indices[i * 3 + 2]];
+            const Vec3f &v0World = objData.vertices[objData.vertex_indices[i * 3]];
+            const Vec3f &v1World = objData.vertices[objData.vertex_indices[i * 3 + 1]];
+            const Vec3f &v2World = objData.vertices[objData.vertex_indices[i * 3 + 2]];
 
             bool visible = true;
             visible &= computePixelCoordinates(v0World, worldToCamera, bottom, left, top, right, nearClippingPlane, width, height, v0Raster);

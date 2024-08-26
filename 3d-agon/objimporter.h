@@ -17,7 +17,7 @@
 
 struct ObjData {
     std::vector<Vec3f> vertices;
-    std::vector<uint32_t> face_indices;
+    std::vector<uint32_t> vertex_indices;
     std::vector<Vec3f> normals;
     std::vector<uint32_t> normal_indices;
     std::vector<Vec2f> uvs;
@@ -86,7 +86,7 @@ ObjData ParseObj(const std::string& filename) {
             while (stream >> tuple) {
                 FaceVertex fv;
                 ParseFaceVertex(tuple, fv);
-                data.face_indices.push_back(fv.vertex_index);
+                data.vertex_indices.push_back(fv.vertex_index);
                 if (fv.st_coord_index != -1) {
                     data.uv_indices.push_back(fv.st_coord_index);
                 }
