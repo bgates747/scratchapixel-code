@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstdint>
 #include <array>
+#include <chrono>
 
 #include "geometry.h" 
 #include "objimporter.h"
@@ -31,38 +32,52 @@ public:
         gc = XCreateGC(display, window, 0, 0);
 
         XMapWindow(display, window);
+
+        // Create the XImage for drawing
+        image = XCreateImage(display, DefaultVisual(display, screen), DefaultDepth(display, screen), ZPixmap, 0,
+                             (char*)malloc(width * height * 4), width, height, 32, 0);
     }
 
     // Destructor to clean up resources
     ~X11Viewer() {
         XFreeGC(display, gc);
         XDestroyWindow(display, window);
+        XDestroyImage(image); // Free the XImage
         XCloseDisplay(display);
     }
 
-    // Main loop that handles events and renders the scene
     void mainLoop(struct context* context, int num_meshes, struct mesh** meshes) {
-        // Render the scene
-        render(context, num_meshes, (const struct mesh** const)meshes);
-        
-
-
-        // Wait for keypress and quit if 'q' is pressed
-        XEvent event;
         while (true) {
+            auto start = std::chrono::high_resolution_clock::now();
+
+            // Render the scene
+            render(context, num_meshes, (const struct mesh** const)meshes);
+
             // Draw the buffer to the X11 window
             drawBufferToWindow(context);
 
-            XNextEvent(display, &event);
+            auto end = std::chrono::high_resolution_clock::now();
+            std::chrono::duration<double> elapsed = end - start;
+            double render_time_ms = elapsed.count() * 1000.0;
+            double fps = 1000.0 / render_time_ms;
 
-            if (event.type == KeyPress) {
-                char key = XLookupKeysym(&event.xkey, 0);
-                if (key == 'q') {
-                    break; // Exit the loop on 'q' press
+            // Output the timing information
+            std::cout << "Render Time: " << render_time_ms << " ms, FPS: " << fps << std::endl;
+
+            // Handle events in a non-blocking manner
+            while (XPending(display) > 0) {
+                XEvent event;
+                XNextEvent(display, &event);
+                if (event.type == KeyPress) {
+                    char key = XLookupKeysym(&event.xkey, 0);
+                    if (key == 'q') {
+                        return; // Exit the loop on 'q' press
+                    }
                 }
             }
         }
     }
+
 
 private:
     Display *display;
@@ -70,6 +85,7 @@ private:
     Window window;
     GC gc; // Graphics context
     int width, height;
+    XImage* image; // XImage to store the pixel data
 
     // Decode the rgba2222 pixel format
     std::array<uint8_t, 4> decode_pixel(uint8_t pixel) {
@@ -84,29 +100,25 @@ private:
         return {mapping[r], mapping[g], mapping[b], mapping[a]};
     }
 
-    // Draw a single pixel on the X11 window
-    void draw_pixel(int x, int y, uint8_t pixel) {
-        // Decode the pixel
-        std::array<uint8_t, 4> rgba = decode_pixel(pixel);
-
-        // Convert the RGBA array to a single 32-bit color value (ARGB format)
-        unsigned long color = (rgba[3] << 24) | (rgba[0] << 16) | (rgba[1] << 8) | rgba[2];
-
-        // Set the color in the graphics context
-        XSetForeground(display, gc, color);
-
-        // Draw the pixel
-        XDrawPoint(display, window, gc, x, y);
-    }
-
-    // Draw the entire buffer to the X11 window
+    // Draw the entire buffer to the X11 window using XPutImage
     void drawBufferToWindow(struct context* context) {
+        uint32_t* image_data = (uint32_t*)image->data;
+
         for (int y = 0; y < context->extent.height; ++y) {
             for (int x = 0; x < context->extent.width; ++x) {
                 uint8_t pixel = context->color_buffer[y * context->extent.width + x];
-                draw_pixel(x, y, pixel);
+                std::array<uint8_t, 4> rgba = decode_pixel(pixel);
+
+                // Convert the RGBA array to a single 32-bit color value (ARGB format)
+                uint32_t color = (rgba[3] << 24) | (rgba[0] << 16) | (rgba[1] << 8) | rgba[2];
+
+                image_data[y * context->extent.width + x] = color;
             }
         }
+
+        // Put the image data to the window in one go
+        XPutImage(display, window, gc, image, 0, 0, 0, 0, width, height);
+
         // Flush the output to make sure everything is drawn
         XFlush(display);
     }
@@ -121,15 +133,15 @@ int main() {
     int windowHeight = 768;
 
     // Set the OBJ file path
-    // std::string objFilePath = "jet.obj";
-    // std::string objFilePath = "cube.obj";
-    std::string objFilePath = "wolf_map.obj";
+    std::string objFilePath = "objects/jet.obj";
+    // std::string objFilePath = "objects/cube.obj";
+    // std::string objFilePath = "objects/wolf_map.obj";
 
     // Create the X11 viewer with the specified dimensions
     X11Viewer viewer(windowWidth, windowHeight);
 
     // Initialize the camera
-    Vec3f cameraPosition(0, 0, 1.5);
+    Vec3f cameraPosition(0, 0, 13);
     float cameraFOV = 90.0f;
     float nearClip = 1.0f;
     float farClip = 1000.0f;
@@ -150,9 +162,9 @@ int main() {
         meshes[i] = (struct mesh*)malloc(sizeof(struct mesh));
     }
     ObjData meshData = ParseObj(objFilePath);
-    // create_mesh(&context, meshes[0], meshData, "jet.rgba2", 512, 512);
-    // create_mesh(&context, meshes[0], meshData, "blenderaxes.rgba2", 34, 34);
-    create_mesh(&context, meshes[0], meshData, "wolf_tex.rgba2", 160, 160);
+    create_mesh(&context, meshes[0], meshData, "objects/jet.rgba2", 512, 512);
+    // create_mesh(&context, meshes[0], meshData, "objects/blenderaxes.rgba2", 34, 34);
+    // create_mesh(&context, meshes[0], meshData, "objects/wolf_tex.rgba2", 160, 160);
 
     // Enter the main loop, passing the context and meshes for rendering
     viewer.mainLoop(&context, num_meshes, meshes);

@@ -74,6 +74,7 @@ ObjData ParseObj(const std::string& filename) {
         } else if (type == "vt") {
             Vec2f st;
             stream >> st.x >> st.y;
+            st.y = 1.0f - st.y;  // Invert the V-axis
             data.uvs.push_back(st);
         } else if (type == "vn") {
             Vec3f n;
