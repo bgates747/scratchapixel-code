@@ -129,19 +129,22 @@ int main() {
     // int windowWidth = 1600;
     // int windowHeight = 900;
 
-    int windowWidth = 1024;
-    int windowHeight = 768;
+    // int windowWidth = 1024;
+    // int windowHeight = 768;
+
+    int windowWidth = 640;
+    int windowHeight = 320;
 
     // Set the OBJ file path
-    std::string objFilePath = "objects/jet.obj";
+    // std::string objFilePath = "objects/jet.obj";
     // std::string objFilePath = "objects/cube.obj";
-    // std::string objFilePath = "objects/wolf_map.obj";
+    std::string objFilePath = "objects/wolf_map.obj";
 
     // Create the X11 viewer with the specified dimensions
     X11Viewer viewer(windowWidth, windowHeight);
 
     // Initialize the camera
-    Vec3f cameraPosition(0, 0, 13);
+    Vec3f cameraPosition(0, 0, 0.5);
     float cameraFOV = 90.0f;
     float nearClip = 1.0f;
     float farClip = 1000.0f;
@@ -162,9 +165,9 @@ int main() {
         meshes[i] = (struct mesh*)malloc(sizeof(struct mesh));
     }
     ObjData meshData = ParseObj(objFilePath);
-    create_mesh(&context, meshes[0], meshData, "objects/jet.rgba2", 512, 512);
+    // create_mesh(&context, meshes[0], meshData, "objects/jet.rgba2", 512, 512);
     // create_mesh(&context, meshes[0], meshData, "objects/blenderaxes.rgba2", 34, 34);
-    // create_mesh(&context, meshes[0], meshData, "objects/wolf_tex.rgba2", 160, 160);
+    create_mesh(&context, meshes[0], meshData, "objects/wolf_tex.rgba2", 160, 160);
 
     // Enter the main loop, passing the context and meshes for rendering
     viewer.mainLoop(&context, num_meshes, meshes);
