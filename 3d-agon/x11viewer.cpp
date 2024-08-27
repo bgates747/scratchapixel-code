@@ -136,11 +136,6 @@ int main() {
     int windowWidth = 640;
     int windowHeight = 320;
 
-    // Set the OBJ file path
-    std::string objFilePath = "objects/jet.obj";
-    // std::string objFilePath = "objects/cube.obj";
-    // std::string objFilePath = "objects/wolf_map.obj";
-
     // Create the X11 viewer with the specified dimensions
     X11Viewer viewer(windowWidth, windowHeight);
 
@@ -165,9 +160,15 @@ int main() {
     for (int i = 0; i < num_meshes; ++i) {
         meshes[i] = (struct Mesh*)malloc(sizeof(struct Mesh));
     }
+
+    // Set the OBJ file path
+    // std::string objFilePath = "objects/jet.obj";
+    std::string objFilePath = "objects/cube.obj";
+    // std::string objFilePath = "objects/wolf_map.obj";
+
     ObjData meshData = ParseObj(objFilePath);
-    struct texture* my_texture = create_texture("objects/jet.rgba2", 512, 512);
-    // struct texture* my_texture = create_texture("objects/blenderaxes.rgba2", 34, 34);
+    // struct texture* my_texture = create_texture("objects/jet.rgba2", 512, 512);
+    struct texture* my_texture = create_texture("objects/blenderaxes.rgba2", 34, 34);
     // struct texture* my_texture = create_texture("objects/wolf_tex.rgba2", 160, 160);
 
     create_mesh(&context, meshes[0], meshData, my_texture);
