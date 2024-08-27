@@ -263,11 +263,11 @@ static inline float edge(const struct point3f* const a, const struct point3f* co
     return (test->x - a->x) * (b->y - a->y) - (test->y - a->y) * (b->x - a->x);
 }
 
-static void shade(const struct texture* texture, struct uv2f st, unsigned char* ci) {
+static void shade(const struct texture* texture, struct uv2f uv, unsigned char* ci) {
     if (texture->image_ptr != NULL) {
         const struct image* const image = texture->image_ptr;
-        float u = st.u;
-        float v = st.v;
+        float u = uv.u;
+        float v = uv.v;
 
         // Convert normalized coordinates to texel coordinates
         struct point2i texel;
@@ -284,7 +284,7 @@ static void shade(const struct texture* texture, struct uv2f st, unsigned char* 
 
 static inline void rasterize(int x0, int y0, int x1, int y1, 
                              const struct point3f* const p0, const struct point3f* const p1, const struct point3f* const p2, 
-                             const struct uv2f* const st0, const struct uv2f* const st1, const struct uv2f* const st2,
+                             const struct uv2f* const uv0, const struct uv2f* const uv1, const struct uv2f* const uv2,
                              const struct Mesh* const mesh,
                              struct context* context) {
     float inv_area = 1.0f / edge(p0, p1, p2);  // Precompute the inverse of the area
@@ -310,12 +310,12 @@ static inline void rasterize(int x0, int y0, int x1, int y1,
                     context->depth_buffer[index] = z;
 
                     // Interpolate the texture coordinates
-                    struct uv2f st;
-                    st.u = (st0->u * w0 + st1->u * w1 + st2->u * w2) * z;
-                    st.v = (st0->v * w0 + st1->v * w1 + st2->v * w2) * z;
+                    struct uv2f uv;
+                    uv.u = (uv0->u * w0 + uv1->u * w1 + uv2->u * w2) * z;
+                    uv.v = (uv0->v * w0 + uv1->v * w1 + uv2->v * w2) * z;
 
                     // Shade the pixel and update the color buffer
-                    shade(mesh->texture, st, &context->color_buffer[index]);
+                    shade(mesh->texture, uv, &context->color_buffer[index]);
                 }
             }
         }
@@ -353,18 +353,18 @@ void render(struct context* context, int num_meshes, const struct Mesh** const m
             x1 = MIN(context->extent.width - 1, (int)bbox[2]);
             y1 = MIN(context->extent.height - 1, (int)bbox[3]);
 
-            struct uv2f st0 = mesh->uvs[sti[0]];
-            struct uv2f st1 = mesh->uvs[sti[1]];
-            struct uv2f st2 = mesh->uvs[sti[2]];
+            struct uv2f uv0 = mesh->uvs[sti[0]];
+            struct uv2f uv1 = mesh->uvs[sti[1]];
+            struct uv2f uv2 = mesh->uvs[sti[2]];
 
-            st0.u /= p0.z;
-            st0.v /= p0.z;
-            st1.u /= p1.z;
-            st1.v /= p1.z;
-            st2.u /= p2.z;
-            st2.v /= p2.z;
+            uv0.u /= p0.z;
+            uv0.v /= p0.z;
+            uv1.u /= p1.z;
+            uv1.v /= p1.z;
+            uv2.u /= p2.z;
+            uv2.v /= p2.z;
 
-            rasterize(x0, y0, x1, y1, &p0, &p1, &p2, &st0, &st1, &st2, mesh, context);
+            rasterize(x0, y0, x1, y1, &p0, &p1, &p2, &uv0, &uv1, &uv2, mesh, context);
         }
     }
 }
